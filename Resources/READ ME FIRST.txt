@@ -1,0 +1,56 @@
+HiFi Guard
+==========
+
+A menu-bar app for Bluetooth earbuds on a Mac. Needs macOS 15 (Sequoia) or newer.
+Tested on Intel Macs. The download also includes an Apple silicon build, which has not been tested yet.
+
+
+INSTALL
+
+1. Drag "HiFi Guard.app" into your Applications folder.
+
+2. Open it. macOS will refuse the first time because the app isn't from the App Store
+   or a registered developer. That's expected.
+   Go to System Settings > Privacy & Security, scroll down, click "Open Anyway",
+   and confirm.
+
+   (Or, in Terminal:  xattr -dr com.apple.quarantine "/Applications/HiFi Guard.app"
+   then open it normally.)
+
+3. An earbud icon appears at the top right of the menu bar. Click it.
+
+4. The first time the app needs to change an app's sound, macOS asks to allow
+   "System Audio Recording". Click Allow. Nothing is recorded or saved; that
+   permission is how it re-plays each app at the volume you set.
+
+It starts automatically at login. Untick "Open at login" in the panel to stop that.
+
+
+WHAT IT DOES
+
+- Keep earbuds in high quality
+  When any app opens your earbuds' mic, Bluetooth drops them to muffled mono "call
+  mode". This keeps calls on the Mac's own mic so the earbuds stay in stereo.
+
+- Keep other audio loud during calls
+  During a call, macOS turns every other app down by about 15 dB. This measures that
+  dip and cancels it, so music and videos stay at the level you set.
+
+- App volume
+  A slider for each app that is playing (0-150%). Click an app's icon to mute it;
+  click its percentage to reset it to 100%.
+
+- Output and mic
+  Switch output device and mic straight from the panel, without System Settings.
+  Choosing the earbuds' mic turns "Keep earbuds in high quality" off, since using
+  that mic is what forces call mode.
+
+
+LIMITS
+
+- The earbuds' own mic always means call quality on a Mac. That's Bluetooth, not
+  this app; macOS has no support for the newer LE Audio standard that avoids it.
+- Call apps that pick the earbuds' mic by name in their own settings (e.g. Zoom)
+  still force call mode. Set them to the Mac's microphone or "Same as System".
+- Undoing the call dip was built and tested on macOS 26 with WhatsApp calls. On other
+  macOS versions the panel tells you if it can't measure the dip.
