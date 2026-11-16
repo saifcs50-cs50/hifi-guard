@@ -1,72 +1,63 @@
 # HiFi Guard
 
-A small macOS menu-bar app for people who use Bluetooth earbuds with a Mac. It does three things:
+I wrote this menu-bar app because my Bluetooth earbuds kept dropping into call mode on my Mac. As soon as a call
+app opened the earbuds' microphone, music went from stereo to muffled mono, and for the whole call macOS turned
+every other app down. HiFi Guard stops both, and it gives each app its own volume slider.
 
-- **Per-app volume.** A slider for every app that is playing (0 to 150%), plus mute and reset.
-- **Bluetooth guard.** Stops Bluetooth earbuds from dropping into muffled mono "call mode" by keeping the
-  Mac's default microphone off the earbuds' own mic.
-- **Call anti-duck.** During a call, macOS turns every other app down by a fixed amount (about 15 dB). HiFi Guard
-  measures that dip and cancels it, so music and videos stay at the level you set.
+It needs macOS 15 or newer. It is not affiliated with Apple.
 
-HiFi Guard is an independent project and is not affiliated with or endorsed by Apple.
+## Per-app volume
 
-## Features
+Every app that's playing gets a slider from 0 to 150%. Click its icon to mute it, or the percentage to reset it.
+The curve is squared, so 50% sounds about half as loud, and boosted audio is soft-clipped.
 
-### App volume
+Each slider is a Core Audio process tap. The tap mutes the app and captures its audio, a private aggregate device
+pairs it with your output device, and an IO callback copies the audio across with the gain applied. Apps at 100%
+are never tapped, so they get no extra latency. If HiFi Guard quits or crashes, Core Audio removes the taps and
+the apps sound normal again. Nothing is recorded.
 
-Each app that plays sound gets a slider from 0 to 150%. Click the app's icon to mute it, click the percentage to
-reset it to 100%. The slider uses a squared taper (50% is roughly "half as loud") and boosted audio is soft-clipped
-so it never goes past full scale.
+## Keeping earbuds out of call mode
 
-Under the hood this uses Core Audio process taps: a muted tap captures the app's audio, a private aggregate
-device pairs the tap with your real output device, and an IO callback copies the audio across with the gain
-applied. Apps left at 100% are never touched, so they get no extra latency. If HiFi Guard quits or crashes, Core
-Audio destroys the taps and the apps' own audio comes straight back. Nothing is recorded or saved.
+A Bluetooth headset can't play high-quality stereo (A2DP) while its mic is open. It switches to the hands-free
+profile instead, which is mono at 8 to 24 kHz. Most call apps use the system's default mic, so when that default is
+the earbuds, HiFi Guard moves it to the built-in mic (or a USB or other non-Bluetooth mic) before any app asks.
 
-### Bluetooth guard
+The panel shows whether the earbuds are in high-quality or call mode, names any app holding their mic, and lets you
+switch devices without opening System Settings. Picking the earbuds' mic yourself turns the guard off.
 
-Opening a Bluetooth headset's microphone forces the headset from high-quality stereo (A2DP) into the hands-free
-profile (mono, 8 to 24 kHz). When the default mic is a Bluetooth mic, HiFi Guard switches the default input to the
-built-in mic (or USB, or another real mic) so call apps that follow the system default never trigger that switch.
-The panel shows whether the link is currently high quality or call quality, names any app that is holding the
-earbuds' mic, and lets you switch output and input devices without opening System Settings. Picking the earbuds'
-mic yourself turns the guard off, since using that mic is what forces call mode.
+## Undoing the call volume dip
 
-### Call anti-duck
+During a call, macOS lowers every other app on the call's output device and leaves only the call app alone. Apple
+doesn't document by how much, so I looked in `coreaudiod`'s log and found it: a fixed volume scalar of 0.1778 for
+each app, about 15 dB down.
 
-When a call app is live, macOS ducks every other app on the call's output device by a fixed factor and exempts only
-the call app. HiFi Guard:
+HiFi Guard treats the app that opened the mic as the call app, and keeps treating it that way while its audio
+plays, so muting yourself doesn't end the call. It reads the duck factor through `/usr/bin/log stream`, routes every
+other playing app through its mixer and boosts it by the inverse, at most +20 dB. The reading has to come from the
+current call on the current output device, and the boost drops back to 1 the moment the call audio stops.
 
-1. detects which app is in a call (it uses the mic, and stays "in a call" while its audio keeps playing, so muting
-   yourself does not end it),
-2. reads the duck factor macOS reports in `coreaudiod`'s log (via `/usr/bin/log stream`),
-3. routes every other playing app through its mixer and boosts by the inverse, capped at +20 dB.
+The call app itself is never routed through HiFi Guard. An early version did tap it (I had moved WhatsApp's
+slider), which took away its exemption from the duck, and the other person's voice dropped to about 18% volume.
+Call apps are now left alone whatever their slider says.
 
-The boost is only applied with a reading taken during the current call on the current output device, and it drops
-to 1 the moment the call's audio stops. The call app itself is never routed through HiFi Guard.
+## Limits
 
-## Limits and caveats
-
-- **Needs macOS 15 (Sequoia) or newer.**
-- **Private APIs and logs.** macOS has no public API to check the "System Audio Recording" permission, so HiFi
-  Guard looks up Apple's private TCC functions at run time. The duck factor is read from an undocumented
-  `coreaudiod` log line. If Apple changes the log wording, the anti-duck feature simply stops compensating; if the
-  private permission functions go missing, the app attempts the taps anyway. Either way, expect it to need updates
-  after some macOS releases.
-- The anti-duck feature was built and tested on macOS 26 with WhatsApp calls. On other macOS versions, or with
-  other call apps, it may not be able to measure the duck; the panel says so when that happens.
-- The earbuds' own microphone always means call quality on a Mac. That is a Bluetooth limitation, not something an
-  app can remove. Call apps that choose the earbuds' mic by name in their own settings (for example Zoom) will still
-  force call mode; set them to the Mac's microphone or "Same as System".
-- The first time HiFi Guard needs to change an app's volume, macOS asks for **System Audio Recording** permission.
-  Without it, volume changes are not applied.
-- It opens at login by default (untick "Open at login" in the panel to stop that).
-- Run-tested on an Intel Mac. The build script also targets Apple silicon (arm64), but that slice has not been
-  tested on real hardware.
+- macOS has no public API for checking the System Audio Recording permission, so HiFi Guard calls Apple's private
+  TCC functions, and tries the taps anyway if they are missing. The duck factor comes from an undocumented log
+  line. Either one could break in a future macOS release.
+- I tested anti-duck on macOS 26 with WhatsApp calls. With other call apps or macOS versions it may not manage to
+  measure the duck, and the panel says so when that happens.
+- The earbuds' own mic always means call quality on a Mac. That's a Bluetooth limit no app can remove. If a call
+  app picks the earbuds' mic by name in its own settings (Zoom can), set it to the Mac's mic or "Same as System".
+- macOS asks for System Audio Recording permission the first time a slider moves. Without it, the sliders do
+  nothing.
+- It opens at login unless you untick "Open at login" in the panel.
+- I've only run it on an Intel Mac. The build also makes an Apple silicon slice, which I haven't tested on real
+  hardware.
 
 ## Build
 
-You need macOS 15+ and a Swift 6 toolchain (Xcode or just the Command Line Tools, no Xcode project is needed).
+You need macOS 15+ and a Swift 6 toolchain. The Command Line Tools are enough; there is no Xcode project.
 
 ```bash
 swift build -c release
@@ -79,22 +70,19 @@ scripts/build-app.sh            # installs to /Applications (quits a running cop
 scripts/build-app.sh "$HOME/Applications"  # or install somewhere else
 ```
 
-The script builds a universal (Intel + Apple silicon) binary, assembles the bundle, and signs it ad hoc. It is
-not notarized, so macOS will refuse to open it the first time: go to System Settings > Privacy & Security and click
-**Open Anyway**. `scripts/package.sh` zips the most recent build together with install notes
-(`Resources/READ ME FIRST.txt`).
+The script builds a universal binary and signs it ad hoc. It isn't notarized, so the first launch needs System
+Settings > Privacy & Security > Open Anyway. `scripts/package.sh` zips the latest build with the install notes in
+`Resources/READ ME FIRST.txt`.
 
 ## Tests
-
-The tests are a small dependency-free executable, because the Command Line Tools ship neither XCTest nor a complete
-Testing framework:
 
 ```bash
 swift run HiFiGuardTests
 ```
 
-They cover the pure logic (device and mic policy, call tracking, anti-duck maths, the mixer, the tap planner and the
-status text). They do not touch real audio hardware.
+The tests are a plain executable, because the Command Line Tools ship neither XCTest nor a complete Testing
+framework. They cover the logic that needs no audio hardware: device and mic policy, call tracking, the anti-duck
+maths, the mixer, the tap planner and the status text.
 
 ## Project layout
 
@@ -108,15 +96,11 @@ status text). They do not touch real audio hardware.
 | `Resources` | `Info.plist`, app icon set, install notes |
 | `scripts` | `build-app.sh` and `package.sh` |
 
-## Tech
+## Tech and credits
 
-Swift 6 toolchain (Swift 5 language mode), SwiftUI `MenuBarExtra`, Core Audio (process taps, aggregate devices,
-HAL properties), `ServiceManagement` for the login item. No third-party dependencies.
-
-## Credits
-
-The "System Audio Recording" permission check follows the approach used by open-source audio-capture tools such as
-AudioCap. No third-party code or assets are bundled; the app icon is drawn in code by `HiFiGuardIcon`.
+Swift 6 toolchain in Swift 5 language mode, SwiftUI `MenuBarExtra`, Core Audio and `ServiceManagement` for the
+login item, with no third-party dependencies. The permission check follows the approach of open-source
+audio-capture tools such as AudioCap, and the app icon is drawn in code by `HiFiGuardIcon`.
 
 ## Licence
 
